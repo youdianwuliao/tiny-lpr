@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TinyLPR — 车牌识别演示</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'PingFang SC','Microsoft YaHei',sans-serif; background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); min-height: 100vh; color: #e0d8f0; display: flex; flex-direction: column; align-items: center; }
+h1 { font-size: 24px; margin: 24px 0 8px; background: linear-gradient(135deg, #60a5fa, #34d399); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.subtitle { font-size: 13px; color: rgba(255,255,255,.4); margin-bottom: 24px; }
+.container { max-width: 640px; width: 100%; padding: 0 16px; }
+.upload-zone { background: rgba(255,255,255,.06); border: 2px dashed rgba(255,255,255,.15); border-radius: 20px; padding: 48px 24px; text-align: center; cursor: pointer; transition: all .2s; margin-bottom: 16px; }
+.upload-zone:hover { border-color: #60a5fa; background: rgba(96,165,250,.05); }
+.upload-zone.dragover { border-color: #34d399; background: rgba(52,211,153,.1); }
+.upload-icon { font-size: 48px; margin-bottom: 12px; }
+.result-card { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 16px; padding: 20px; margin-bottom: 12px; }
+.result-plate { font-size: 28px; font-weight: 800; letter-spacing: 4px; text-align: center; padding: 12px; background: #1a3a5c; border: 2px solid #60a5fa; border-radius: 10px; color: #fff; margin-bottom: 8px; }
+.result-meta { font-size: 13px; color: rgba(255,255,255,.5); display: flex; justify-content: space-between; }
+.conf-badge { background: rgba(52,211,153,.15); color: #34d399; padding: 2px 8px; border-radius: 8px; font-size: 12px; }
+.loading { text-align: center; padding: 32px; }
+.spinner { width: 40px; height: 40px; border: 3px solid rgba(96,165,250,.15); border-top-color: #60a5fa; border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn { display: inline-block; padding: 10px 24px; border-radius: 10px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.06); color: #e0d8f0; cursor: pointer; font-size: 14px; transition: all .2s; margin: 4px; }
+.btn:hover { background: rgba(255,255,255,.1); }
+.btn-primary { background: linear-gradient(135deg, #60a5fa, #3b82f6); border: none; color: #fff; }
+.hidden { display: none !important; }
+#preview { max-width: 100%; max-height: 300px; border-radius: 12px; margin: 12px 0; }
+@media (max-width: 480px) { .result-plate { font-size: 22px; letter-spacing: 2px; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🚗 TinyLPR</h1>
+  <p class="subtitle">上传图片，秒级识别车牌号</p>
+
+  <!-- 上传区 -->
+  <div class="upload-zone" id="uploadZone">
+    <div class="upload-icon">📸</div>
+    <p>点击上传 或 拖拽图片到此处</p>
+    <p style="font-size:12px;color:rgba(255,255,255,.3);margin-top:8px;">支持 JPG / PNG / BMP</p>
+    <input type="file" id="fileInput" accept="image/*" class="hidden">
+  </div>
+
+  <!-- 预览 -->
+  <div id="previewArea" class="hidden" style="text-align:center;">
+    <img id="preview" src="" alt="预览">
+    <div style="margin-top:12px;">
+      <button class="btn" onclick="reset()">🔄 重新上传</button>
+      <button class="btn btn-primary" onclick="recognize()">🔍 识别车牌</button>
+    </div>
+  </div>
+
+  <!-- 加载 -->
+  <div id="loading" class="loading hidden">
+    <div class="spinner"></div>
+    <p>正在识别...</p>
+  </div>
+
+  <!-- 结果 -->
+  <div id="results"></div>
+</div>
+
+<script>
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+const previewArea = document.getElementById('previewArea');
+const preview = document.getElementById('preview');
+const loading = document.getElementById('loading');
+const results = document.getElementById('results');
+
+let selectedFile = null;
+
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  selectedFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    preview.src = e.target.result;
+    uploadZone.classList.add('hidden');
+    previewArea.classList.remove('hidden');
+    results.innerHTML = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function reset() {
+  selectedFile = null;
+  preview.src = '';
+  uploadZone.classList.remove('hidden');
+  previewArea.classList.add('hidden');
+  loading.classList.add('hidden');
+  results.innerHTML = '';
+}
+
+async function recognize() {
+  if (!selectedFile) return;
+  loading.classList.remove('hidden');
+  results.innerHTML = '';
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+
+  try {
+    const res = await fetch('/api/recognize', { method: 'POST', body: formData });
+    const data = await res.json();
+    loading.classList.add('hidden');
+
+    if (data.error) {
+      results.innerHTML = `<div class="result-card" style="text-align:center;color:#f87171;">❌ ${data.error}</div>`;
+      return;
+    }
+
+    if (data.demo) {
+      results.innerHTML = `<div class="result-card" style="text-align:center;color:#fbbf24;">⚠️ ${data.message}</div>`;
+    }
+
+    for (const r of data.results) {
+      results.innerHTML += `
+        <div class="result-card">
+          <div class="result-plate">${r.plate}</div>
+          <div class="result-meta">
+            <span>位置: [${r.bbox.join(', ')}]</span>
+            <span class="conf-badge">${(r.confidence * 100).toFixed(1)}%</span>
+          </div>
+        </div>`;
+    }
+  } catch (e) {
+    loading.classList.add('hidden');
+    results.innerHTML = `<div class="result-card" style="text-align:center;color:#f87171;">❌ 连接失败: ${e.message}</div>`;
+  }
+}
+</script>
+</body>
+</html>

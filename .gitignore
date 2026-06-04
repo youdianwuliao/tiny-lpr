@@ -1,0 +1,9 @@
+# 数据目录
+data/
+*.pt
+*.onnx
+*.engine
+__pycache__/
+*.pyc
+.DS_Store
+runs/
