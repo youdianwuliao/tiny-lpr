@@ -388,6 +388,152 @@ services:
 
 ---
 
+---
+
+## 图片传输方式（Java → Python 微服务）
+
+### 方式一：本地文件（测试用）
+
+```java
+RestTemplate rest = new RestTemplate();
+
+// 读取本地图片
+FileSystemResource file = new FileSystemResource("/path/to/car.jpg");
+
+// 构建 multipart
+MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+body.add("file", file);
+
+// 发送
+Map result = rest.postForObject(
+    "http://127.0.0.1:8000/api/recognize",
+    body,
+    Map.class
+);
+
+System.out.println(result);
+// → {results=[{plate=京A12345, confidence=0.98, bbox=[100,200,300,260]}]}
+```
+
+### 方式二：Spring Boot 接收前端上传 → 转发（最常用）
+
+```java
+@RestController
+public class LPRController {
+
+    private final RestTemplate rest = new RestTemplate();
+
+    @PostMapping("/api/recognize")
+    public Map recognize(@RequestParam("file") MultipartFile file) {
+        // 前端上传的 MultipartFile 直接转发给 Python
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", file.getResource());  // ← getResource() 直接传
+
+        return rest.postForObject(
+            "http://127.0.0.1:8000/api/recognize",
+            body,
+            Map.class
+        );
+    }
+}
+```
+
+### 方式三：byte[] 字节流传图
+
+```java
+// 从任意来源拿到 byte[]
+byte[] imageBytes = ...; // 数据库、消息队列、文件等
+
+MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+body.add("file", new ByteArrayResource(imageBytes) {
+    @Override
+    public String getFilename() {
+        return "plate.jpg";  // 必须给文件名
+    }
+});
+
+Map result = rest.postForObject(
+    "http://127.0.0.1:8000/api/recognize",
+    body,
+    Map.class
+);
+```
+
+### 方式四：Base64 传图
+
+```java
+// Java 端 — 图片转 Base64
+byte[] bytes = Files.readAllBytes(Paths.get("/path/to/car.jpg"));
+String base64 = Base64.getEncoder().encodeToString(bytes);
+
+Map<String, String> req = new HashMap<>();
+req.put("image", base64);
+
+Map result = rest.postForObject(
+    "http://127.0.0.1:8000/api/recognize_base64",
+    req,
+    Map.class
+);
+```
+
+Python 端加接口：
+
+```python
+@app.post("/api/recognize_base64")
+async def recognize_base64(req: dict):
+    import base64
+    img_bytes = base64.b64decode(req["image"])
+    nparr = np.frombuffer(img_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    results = get_lpr()(img)
+    return {"results": results}
+```
+
+### 方式五：URL 传图
+
+```java
+Map<String, String> req = Map.of("url", "https://example.com/car.jpg");
+Map result = rest.postForObject(
+    "http://127.0.0.1:8000/api/recognize_url",
+    req,
+    Map.class
+);
+```
+
+### 方式六：InputStream 流传图
+
+```java
+// 从 InputStream 读取后转 byte[] 发送
+InputStream inputStream = ...; // 任意来源
+
+byte[] bytes = inputStream.readAllBytes();
+
+MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+body.add("file", new ByteArrayResource(bytes) {
+    @Override
+    public String getFilename() { return "plate.jpg"; }
+});
+
+Map result = rest.postForObject(
+    "http://127.0.0.1:8000/api/recognize",
+    body,
+    Map.class
+);
+```
+
+### 传图方式速查
+
+| 来源 | 用哪个 | 代码量 |
+|------|--------|--------|
+| 本地文件 | `FileSystemResource` | 3 行 |
+| 前端上传 | `file.getResource()` | 3 行 |
+| byte[] | `ByteArrayResource` | 5 行 |
+| InputStream | `readAllBytes()` + `ByteArrayResource` | 5 行 |
+| Base64 字符串 | `postForObject` + JSON | 5 行 |
+| 远程 URL | `postForObject` + JSON | 3 行 |
+
+---
+
 ## 总结
 
 | 你的 Java 框架 | 推荐方案 | 理由 |
