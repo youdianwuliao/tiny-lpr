@@ -1,0 +1,18 @@
+# 车牌识别 Java 服务
+lpr:
+  # ONNX 模型路径（复制训练好的模型到 resources/models/ 或指定绝对路径）
+  detector-path: models/plate_detector.onnx
+  recognizer-path: models/plate_recognizer.onnx
+  # 置信度阈值
+  confidence-threshold: 0.5
+  # 设备: cpu / cuda
+  device: cpu
+
+server:
+  port: 8080
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
