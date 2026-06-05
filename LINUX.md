@@ -38,13 +38,18 @@ cd tiny-lpr
 # 基础依赖
 pip install fastapi uvicorn opencv-python pillow python-multipart
 
-# 训练依赖（需要 GPU）
+# 训练依赖（GTX 1050 Ti 用 CUDA 11.8）
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-pip install ultralytics onnx onnxruntime onnxsim tqdm matplotlib
+pip install ultralytics onnx onnxruntime-gpu onnxsim tqdm matplotlib
 
 # 如果只有 CPU，装 CPU 版 PyTorch
 # pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 ```
+
+> ⚠️ GTX 1050 Ti 专属注意：
+> - 显存只有 4GB，训练时 batch_size 必须设为 8 以下
+> - 用 CUDA 11.8（不要用 CUDA 12，1050 Ti 不支持）
+> - 推理装 `onnxruntime-gpu` 替代 `onnxruntime`（GPU 推理快 5x）
 
 ### Step 2：下载数据集
 
@@ -82,29 +87,34 @@ python scripts/01_prepare_data.py \
 #   data/processed/char_map.json   ← 字符映射
 ```
 
-### Step 4：训练检测器
+### Step 4：训练检测器（GTX 1050 Ti 专属参数）
 
 ```bash
-# 训练 YOLOv8n（单 GPU 约 1 小时）
+# 4GB 显存版参数
 python scripts/02_train_detect.py \
     --data data/processed/plate.yaml \
     --output models \
-    --epochs 100
+    --epochs 100 \
+    --imgsz 320                    # ⚡ 降低分辨率省显存
 
-# 输出：models/plate_detector.pt
+# 如果还 OOM，手动改 batch_size
+# 编辑 scripts/02_train_detect.py，把 batch=16 改成 batch=4
 ```
+
+> 💡 1050 Ti 训练 YOLOv8n 约 1.5-2 小时（比 3060 慢一倍，但能跑）
 
 ### Step 5：训练识别器
 
 ```bash
-# 训练 CRNN（单 GPU 约 2 小时）
+# CRNN 很轻量，4GB 显存够用
 python scripts/03_train_recognize.py \
     --data data/processed \
     --output models \
     --epochs 50 \
-    --batch_size 64
+    --batch_size 32
 
 # 输出：models/plate_recognizer.pt
+# 预计时间：约 1-2 小时
 ```
 
 ### Step 6：导出 ONNX
@@ -122,13 +132,19 @@ python scripts/04_export.py \
 #   models/plate_recognizer.json
 ```
 
-### Step 7：启动服务
+### Step 7：GPU 推理 + 启动
 
 ```bash
-python app/main.py
+# 安装 GPU 版 ONNX Runtime
+pip install onnxruntime-gpu
 
-# 浏览器打开 http://localhost:8000
-# 上传车牌图片即可识别
+# 验证 GPU 是否被识别
+python -c "import onnxruntime; print(onnxruntime.get_available_providers())"
+# 应该输出包含 'CUDAExecutionProvider'
+
+# 启动服务
+python app/main.py
+# → http://localhost:8000
 ```
 
 ---
@@ -194,7 +210,36 @@ sudo systemctl enable --now tiny-lpr
 
 ---
 
-## 六、常见问题
+## 六、GTX 1050 Ti 专属配置
+
+| 参数 | 值 | 原因 |
+|------|------|------|
+| CUDA 版本 | **11.8** | 1050 Ti 不支持 CUDA 12 |
+| PyTorch | `torch==2.0.1+cu118` | 兼容性最好 |
+| cuDNN | 8.x | CUDA 11.8 配套 |
+| YOLO batch_size | **4-8** | 4GB 显存上限 |
+| YOLO imgsz | **320** | 降低分辨率省显存 |
+| CRNN batch_size | **32** | 识别器显存需求小 |
+| 推理 | `onnxruntime-gpu` | 比 CPU 快 5x |
+
+### 常见 1050 Ti 报错
+
+```bash
+# CUDA out of memory → 降低 batch_size
+python scripts/02_train_detect.py --batch 4
+
+# CUDA driver version insufficient → 更新驱动
+nvidia-smi                    # 查看驱动版本
+sudo apt install nvidia-driver-535  # Ubuntu
+
+# No CUDA devices found → 检查 CUDA 安装
+nvcc --version                # 确认 CUDA 已安装
+python -c "import torch; print(torch.cuda.is_available())"
+```
+
+---
+
+## 七、常见问题
 
 **Q: 没有 GPU 能训练吗？**
 A: 能，但很慢。YOLOv8n 在 CPU 上训练约 10-20 小时。建议用 GPU 或直接下载预训练模型。
