@@ -11,20 +11,27 @@
 ## 一、快速体验（Demo 模式，无需模型）
 
 ```bash
-# 1. 克隆
+# 克隆
 git clone https://github.com/youdianwuliao/tiny-lpr.git
 cd tiny-lpr
 
-# 2. 安装依赖
+# 创建虚拟环境（推荐）
+python3 -m venv venv
+source venv/bin/activate
+
+# 如果提示没有 venv 模块，先安装
+# sudo apt install python3.12-venv
+
+# 安装依赖
 pip install fastapi uvicorn opencv-python pillow python-multipart
 
-# 3. 启动（无模型自动进入 Demo 模式）
+# 启动（无模型自动进入 Demo 模式）
 python app/main.py
 
-# 4. 浏览器打开
-# http://localhost:8000
-# 上传任意图片，会返回模拟结果
+# 浏览器打开 http://localhost:8000
 ```
+
+> 💡 实际运行过的命令，已验证可用
 
 ---
 
