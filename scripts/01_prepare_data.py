@@ -100,9 +100,21 @@ def prepare_data(ccpd_dir: str, output_dir: str, val_ratio: float = 0.1):
         (output_dir / 'labels' / split).mkdir(parents=True, exist_ok=True)
         (output_dir / 'crops' / split).mkdir(parents=True, exist_ok=True)
 
-    # 解析所有文件
-    all_files = list(ccpd_dir.glob('*.jpg'))
+    # 解析所有文件（支持 .jpg/.png/.jpeg）
+    all_files = []
+    for ext in ['*.jpg', '*.png', '*.jpeg', '*.JPG', '*.PNG']:
+        all_files.extend(ccpd_dir.glob(f'**/{ext}'))
     print(f"找到 {len(all_files)} 张图片")
+    if len(all_files) == 0:
+        print(f"⚠️ 未找到图片文件！请检查路径: {ccpd_dir.absolute()}")
+        print(f"   目录是否存在: {ccpd_dir.exists()}")
+        if ccpd_dir.exists():
+            contents = list(ccpd_dir.iterdir())[:5]
+            print(f"   目录内容: {[c.name for c in contents]}")
+        return
+
+    # 检测是否是 CCPD2020 目录结构（有 train/val 子目录）
+    has_splits = (ccpd_dir / 'train').exists() or (ccpd_dir / 'Train').exists()
 
     annotations = []
     for f in tqdm(all_files, desc="解析标注"):
@@ -114,9 +126,16 @@ def prepare_data(ccpd_dir: str, output_dir: str, val_ratio: float = 0.1):
     print(f"有效标注: {len(annotations)} 张")
 
     # 划分训练/验证集
-    split_idx = int(len(annotations) * (1 - val_ratio))
-    train_anns = annotations[:split_idx]
-    val_anns = annotations[split_idx:]
+    if has_splits:
+        # CCPD2020 已分好 train/val，直接按目录分
+        print("检测到 CCPD2020 目录结构，按 train/val 目录划分")
+        train_anns = [a for a in annotations if '/train/' in a['filepath'].lower()]
+        val_anns = [a for a in annotations if '/val/' in a['filepath'].lower() or '/test/' in a['filepath'].lower()]
+    else:
+        # CCPD2019 平铺目录，随机划分
+        split_idx = int(len(annotations) * (1 - val_ratio))
+        train_anns = annotations[:split_idx]
+        val_anns = annotations[split_idx:]
 
     # 处理数据
     char_map, char_list = build_char_map()
