@@ -43,21 +43,22 @@ def build_char_map():
 
 
 def parse_ccpd_filename(filename: str) -> dict:
-    """解析 CCPD 文件名获取标注信息"""
-    parts = filename.replace('.jpg', '').split('-')
+    """解析 CCPD 文件名获取标注信息
+    
+    CCPD2019: 025-95_113-...-37-15.jpg  (最后两段=省份编码_车牌号)
+    CCPD2020: 003607...-117-16.jpg      (同样格式)
+    """
+    name = filename.rsplit('.', 1)[0]  # 去掉扩展名
+    parts = name.split('-')
     if len(parts) < 6:
         return None
 
-    # 车牌号（最后一段）
-    plate_str = parts[-1]
-    # 车牌号格式: 省份_字母数字，如 皖_A12345
-    plate_parts = plate_str.split('_')
-    if len(plate_parts) >= 2:
-        province = plate_parts[0]
-        number = plate_parts[1]
-        plate_number = province + number
-    else:
-        plate_number = plate_str
+    # 车牌号：倒数两段是 省份编码-车牌号
+    province_code = parts[-2]
+    plate_code = parts[-1]
+    
+    # 尝试解码为可读车牌号
+    plate_number = decode_plate(province_code, plate_code)
 
     # 边界框（第二段: 中心点&对角点）
     bbox_str = parts[1]
@@ -71,7 +72,7 @@ def parse_ccpd_filename(filename: str) -> dict:
         y1 = y_center - h // 2
         x2 = x_center + w // 2
         y2 = y_center + h // 2
-    except:
+    except (ValueError, IndexError):
         return None
 
     return {
@@ -79,6 +80,67 @@ def parse_ccpd_filename(filename: str) -> dict:
         'plate_number': plate_number,
         'bbox': [max(0, x1), max(0, y1), x2, y2],
     }
+
+
+# CCPD 省份映射（数值索引 → 省份简称）
+CCPD_PROVINCES = [
+    "皖", "沪", "津", "渝", "冀", "晋", "蒙", "辽", "吉", "黑",
+    "苏", "浙", "京", "闽", "赣", "鲁", "豫", "鄂", "湘", "粤",
+    "桂", "琼", "川", "贵", "云", "藏", "陕", "甘", "青", "宁", "新"
+]
+CCPD_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"  # 24个（不含I/O）
+CCPD_CHARS = CCPD_LETTERS + "0123456789"   # 34个
+
+
+def decode_plate(province_code: str, plate_code: str) -> str:
+    """解码 CCPD 车牌号
+    
+    蓝牌: province * 24 * 34^5 + letter * 34^5 + 5个字符
+    """
+    try:
+        pc = int(province_code)
+        pn = int(plate_code)
+    except ValueError:
+        return f"{province_code}_{plate_code}"
+    
+    # 省份
+    if 0 <= pc < len(CCPD_PROVINCES):
+        province = CCPD_PROVINCES[pc]
+        # 解码车牌号
+        if pn >= 24 * (34 ** 5):
+            return decode_plate_n(pn, province, 6)
+        else:
+            return decode_plate_n(pn, province, 5)
+    else:
+        # 省份编码不在标准范围（如 CCPD2020 绿牌），直接用编码值
+        # 编码为纯数字字符串用于训练
+        return f"{pc:03d}{pn:04d}"
+
+
+def decode_plate_n(pn: int, province: str, n_digits: int) -> str:
+    """解码 n 位车牌号"""
+    result = province
+    
+    # 第二位：字母
+    letter_base = 34 ** n_digits
+    letter_idx = pn // letter_base
+    pn = pn % letter_base
+    if 0 <= letter_idx < len(CCPD_LETTERS):
+        result += CCPD_LETTERS[letter_idx]
+    else:
+        result += "?"
+    
+    # 剩余位
+    for i in range(n_digits - 1, -1, -1):
+        char_base = 34 ** i
+        char_idx = pn // char_base if char_base > 0 else pn
+        pn = pn % char_base if char_base > 0 else 0
+        if 0 <= char_idx < len(CCPD_CHARS):
+            result += CCPD_CHARS[char_idx]
+        else:
+            result += "?"
+    
+    return result
 
 
 def prepare_data(ccpd_dir: str, output_dir: str, val_ratio: float = 0.1):
