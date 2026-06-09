@@ -60,18 +60,11 @@ def parse_ccpd_filename(filename: str) -> dict:
     # 尝试解码为可读车牌号
     plate_number = decode_plate(province_code, plate_code)
 
-    # 边界框（第二段: 中心点&对角点）
-    bbox_str = parts[1]
+    # 边界框（第三段，格式: x1&y1_x2&y2）
+    bbox_str = parts[2]
     try:
-        center_diag = bbox_str.split('&')
-        center = center_diag[0].split('_')
-        diag = center_diag[1].split('_')
-        x_center, y_center = int(center[0]), int(center[1])
-        w, h = int(diag[0]), int(diag[1])
-        x1 = x_center - w // 2
-        y1 = y_center - h // 2
-        x2 = x_center + w // 2
-        y2 = y_center + h // 2
+        coords = bbox_str.replace('&', '_').split('_')
+        x1, y1, x2, y2 = int(coords[0]), int(coords[1]), int(coords[2]), int(coords[3])
     except (ValueError, IndexError):
         return None
 
