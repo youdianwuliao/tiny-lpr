@@ -172,13 +172,18 @@ def prepare_data(ccpd_dir: str, output_dir: str, val_ratio: float = 0.1):
     has_splits = (ccpd_dir / 'train').exists() or (ccpd_dir / 'Train').exists()
 
     annotations = []
+    parse_errors = 0
     for f in tqdm(all_files, desc="解析标注"):
         ann = parse_ccpd_filename(f.name)
         if ann:
             ann['filepath'] = str(f)
             annotations.append(ann)
+        else:
+            parse_errors += 1
+            if parse_errors <= 3:
+                print(f"\n  ⚠️ 解析失败 #{parse_errors}: {f.name[:80]}")
 
-    print(f"有效标注: {len(annotations)} 张")
+    print(f"有效标注: {len(annotations)} 张 (失败: {parse_errors})")
 
     # 划分训练/验证集
     if has_splits:
