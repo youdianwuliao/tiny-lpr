@@ -217,32 +217,50 @@ sudo systemctl enable --now tiny-lpr
 
 ---
 
-## 六、GTX 1050 Ti 专属配置
+## 六、不同显卡适配
 
-| 参数 | 值 | 原因 |
-|------|------|------|
-| CUDA 版本 | **11.8** | 1050 Ti 不支持 CUDA 12 |
-| PyTorch | `torch==2.0.1+cu118` | 兼容性最好 |
-| cuDNN | 8.x | CUDA 11.8 配套 |
-| YOLO batch_size | **4-8** | 4GB 显存上限 |
-| YOLO imgsz | **320** | 降低分辨率省显存 |
-| CRNN batch_size | **32** | 识别器显存需求小 |
-| 推理 | `onnxruntime-gpu` | 比 CPU 快 5x |
-
-### 常见 1050 Ti 报错
+### RTX 4060 Laptop (8GB) — 推荐
 
 ```bash
-# CUDA out of memory → 降低 batch_size
-python scripts/02_train_detect.py --batch 4
+# CUDA 12.4
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+pip install ultralytics onnx onnxruntime-gpu onnxsim tqdm matplotlib
 
-# CUDA driver version insufficient → 更新驱动
-nvidia-smi                    # 查看驱动版本
-sudo apt install nvidia-driver-535  # Ubuntu
-
-# No CUDA devices found → 检查 CUDA 安装
-nvcc --version                # 确认 CUDA 已安装
-python -c "import torch; print(torch.cuda.is_available())"
+# 训练参数 — 全默认，不用降配置
+python scripts/02_train_detect.py --data data/processed/plate.yaml --epochs 100
+python scripts/03_train_recognize.py --data data/processed --epochs 50
+# 预计时间：检测器~40分钟，识别器~30分钟
 ```
+
+### GTX 1050 Ti (4GB) — 降配置
+
+```bash
+# CUDA 11.8
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+# 训练必须降参数
+python scripts/02_train_detect.py --imgsz 320 --epochs 100
+# 如果 OOM：编辑脚本把 batch=16 改成 batch=4
+python scripts/03_train_recognize.py --batch_size 32 --epochs 50
+# 预计时间：检测器~2-3小时，识别器~1-2小时
+```
+
+### 无 GPU (CPU only)
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# 能跑但很慢，检测器约10-20小时，不推荐训练，建议直接下载预训练模型
+```
+
+### 显卡速查
+
+| 显卡 | 显存 | CUDA | batch | imgsz | 训练速度 |
+|------|------|------|-------|-------|---------|
+| RTX 4060 | 8GB | 12.x | 16 | 640 | ⭐⭐⭐ |
+| RTX 3060 | 12GB | 11.x | 16 | 640 | ⭐⭐⭐ |
+| RTX 2060 | 6GB | 11.x | 8 | 640 | ⭐⭐ |
+| GTX 1050 Ti | 4GB | 11.x | 4 | 320 | ⭐ |
+| CPU | — | — | 4 | 320 | 🐌 |
 
 ---
 
